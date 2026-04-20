@@ -1,17 +1,75 @@
+# docker-compose.yml
 services:
+
+  # ── Backend (FastAPI) ────────────────────────────────────────────────────────
   backend:
     build:
       context: .
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/Dockerfile.backend
+    container_name: cloudscope-backend
+    restart: unless-stopped
     ports:
       - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=info
+    networks:
+      - cloudscope-net
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    volumes:
+      - logs:/app/logs
 
+  # ── Dashboard (Streamlit) ────────────────────────────────────────────────────
   dashboard:
     build:
       context: .
-      dockerfile: docker/Dockerfile
-    command: streamlit run ui/dashboard.py --server.port 8501 --server.address 0.0.0.0
+      dockerfile: docker/Dockerfile.dashboard
+    container_name: cloudscope-dashboard
+    restart: unless-stopped
+    command: >
+      streamlit run ui/dashboard.py
+      --server.port 8501
+      --server.address 0.0.0.0
+      --server.headless true
+      --browser.gatherUsageStats false
     ports:
       - "8501:8501"
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - PYTHONUNBUFFERED=1
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy   # waits for /health to pass, not just container start
+    networks:
+      - cloudscope-net
+
+  # ── Simulator (background metric generator) ──────────────────────────────────
+  simulator:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.simulator
+    container_name: cloudscope-simulator
+    restart: unless-stopped
+    command: python simulator/simulator.py
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - cloudscope-net
+
+# ── Shared network ────────────────────────────────────────────────────────────
+networks:
+  cloudscope-net:
+    driver: bridge
+
+# ── Named volumes ─────────────────────────────────────────────────────────────
+volumes:
+  logs:
