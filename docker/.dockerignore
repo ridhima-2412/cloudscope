@@ -1,1 +1,54 @@
+# .dockerignore  — keep the build context lean and safe
 
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Secrets & config (never bake into image)
+.env
+.env.*
+*.pem
+*.key
+secrets/
+
+# Test & dev files
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Editor / OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Docker files themselves (no need to copy in)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Docs & assets not needed at runtime
+README*
+docs/
+*.md
