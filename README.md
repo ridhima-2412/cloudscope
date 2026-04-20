@@ -247,12 +247,4 @@ docker-compose up --build
 
 ---
 
-# 👨‍💻 Author
-
-Developed as a cloud monitoring project using full-stack + AWS + Docker technologies.
-
----
-
-# 📄 License
-
-This project is for educational / demo purposes unless otherwise specified.
+##DEMO VIDEO LINK :[ https://1drv.ms/v/c/77a183bd730fde19/IQDJLMYUkbxCSrmhpP7bUAkqAcuwCkzvty5aC-e8vP211ao?e=Mf01vw](url)
