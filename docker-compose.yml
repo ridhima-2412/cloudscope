@@ -13,6 +13,16 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=info
+      - EC2_MONITORING_ENABLED=${EC2_MONITORING_ENABLED:-false}
+      - EC2_DISPLAY_NAME=${EC2_DISPLAY_NAME:-AWS EC2}
+      - EC2_REGION=${EC2_REGION:-us-east-1}
+      - EC2_HOST=${EC2_HOST:-}
+      - EC2_PORT=${EC2_PORT:-22}
+      - EC2_USERNAME=${EC2_USERNAME:-}
+      - EC2_SSH_KEY_PATH=${EC2_SSH_KEY_PATH_CONTAINER:-/run/secrets/ec2-key.pem}
+      - EC2_SSH_PASSWORD=${EC2_SSH_PASSWORD:-}
+      - EC2_CONNECT_TIMEOUT=${EC2_CONNECT_TIMEOUT:-8}
+      - EC2_COMMAND_TIMEOUT=${EC2_COMMAND_TIMEOUT:-10}
     networks:
       - cloudscope-net
     healthcheck:
@@ -24,6 +34,7 @@ services:
       start_period: 10s
     volumes:
       - logs:/app/logs
+      - ${EC2_SSH_KEY_DIR_HOST:-./data/keys}:/run/secrets:ro
 
   # ── Dashboard (Streamlit) ────────────────────────────────────────────────────
   dashboard:
@@ -41,8 +52,8 @@ services:
     ports:
       - "8501:8501"
     environment:
-      - BACKEND_URL=http://backend:8000
-      - POLL_SECONDS=5
+      - BACKEND_URL=${BACKEND_URL:-http://backend:8000}
+      - POLL_SECONDS=${POLL_SECONDS:-5}
       - PYTHONUNBUFFERED=1
     depends_on:
       backend:
