@@ -1,198 +1,333 @@
-# main.py
+from collections import deque
+from datetime import datetime, timezone
+import random
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime, timezone
-from collections import deque
-import random
-import math
 
 app = FastAPI(
     title="CloudScope API",
-    description="Cloud Infrastructure Monitoring Dashboard",
-    version="2.0.0"
+    description="Cloud infrastructure monitoring dashboard",
+    version="2.1.0",
 )
 
-# ── CORS (allows your frontend to call this API) ──────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # tighten to your frontend URL in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ── In-memory metric history (last 20 snapshots) ──────────────────────────────
-metric_history: deque = deque(maxlen=20)
+HISTORY_LIMIT = 60
+RAM_TOTAL_GB = 64
+metric_history: deque = deque(maxlen=HISTORY_LIMIT)
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+LOG_LEVEL_MAP = {
+    "healthy": "INFO",
+    "warning": "WARN",
+    "critical": "ERROR",
+}
 
-def _clamp(value: int, lo: int, hi: int) -> int:
-    return max(lo, min(hi, value))
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def _round(value: float, digits: int = 1) -> float:
+    return round(value, digits)
 
 
 def generate_metrics() -> dict:
-    """
-    Simulate system metrics.
-    'attack' mode spikes CPU/memory to mimic an incident.
-    """
-    mode = random.choice(["normal", "normal", "normal", "attack"])  # 25 % attack chance
+    mode = random.choice(["normal", "normal", "normal", "attack"])
 
-    if mode == "normal":
-        cpu     = random.randint(18, 62)
-        memory  = random.randint(28, 68)
-        disk    = random.randint(40, 75)
-        network = random.randint(10, 300)   # MB/s
-        latency = random.randint(12, 80)    # ms
-    else:
-        cpu     = random.randint(78, 100)
-        memory  = random.randint(74, 97)
-        disk    = random.randint(70, 95)
+    if mode == "attack":
+        cpu = random.randint(78, 100)
+        memory = random.randint(74, 97)
+        disk = random.randint(70, 95)
         network = random.randint(400, 950)
-        latency = random.randint(200, 800)
+        latency = random.randint(180, 800)
+    else:
+        cpu = random.randint(18, 62)
+        memory = random.randint(28, 68)
+        disk = random.randint(40, 75)
+        network = random.randint(10, 300)
+        latency = random.randint(12, 80)
 
-    # Small random drift so repeated calls feel alive
-    cpu     = _clamp(cpu     + random.randint(-3, 3), 0, 100)
-    memory  = _clamp(memory  + random.randint(-2, 2), 0, 100)
+    cpu = int(_clamp(cpu + random.randint(-3, 3), 0, 100))
+    memory = int(_clamp(memory + random.randint(-2, 2), 0, 100))
+    disk = int(_clamp(disk + random.randint(-2, 3), 0, 100))
+    network = int(_clamp(network + random.randint(-25, 25), 0, 950))
+    latency = int(_clamp(latency + random.randint(-20, 20), 1, 800))
+
+    ram_used_gb = _round(RAM_TOTAL_GB * (memory / 100), 1)
+    cost_optimization = _round(
+        _clamp(100 - ((cpu * 0.45) + (memory * 0.35) + (disk * 0.20)), 5, 98)
+    )
 
     return {
-        "mode":    mode,
-        "cpu":     cpu,
-        "memory":  memory,
-        "disk":    disk,
-        "network": network,   # MB/s outbound
-        "latency": latency,   # ms avg response time
+        "mode": mode,
+        "cpu": cpu,
+        "memory": memory,
+        "ram_usage": memory,
+        "ram_used_gb": ram_used_gb,
+        "ram_total_gb": RAM_TOTAL_GB,
+        "disk": disk,
+        "network": network,
+        "latency": latency,
+        "cost_optimization": cost_optimization,
     }
 
 
-def build_alerts(data: dict) -> list[dict]:
-    """
-    Return a list of alert objects (severity + message).
-    Multiple alerts can fire simultaneously.
-    """
-    alerts = []
+def build_alerts(metrics: dict) -> list[dict]:
+    alerts: list[dict] = []
 
-    if data["cpu"] >= 90:
-        alerts.append({"severity": "critical", "message": "CPU critically high", "metric": "cpu", "value": data["cpu"]})
-    elif data["cpu"] >= 75:
-        alerts.append({"severity": "warning",  "message": "CPU usage elevated",  "metric": "cpu", "value": data["cpu"]})
+    if metrics["cpu"] >= 90:
+        alerts.append(
+            {
+                "severity": "critical",
+                "metric": "cpu",
+                "message": "CPU critically high",
+                "value": metrics["cpu"],
+                "unit": "%",
+            }
+        )
+    elif metrics["cpu"] >= 75:
+        alerts.append(
+            {
+                "severity": "warning",
+                "metric": "cpu",
+                "message": "CPU usage elevated",
+                "value": metrics["cpu"],
+                "unit": "%",
+            }
+        )
 
-    if data["memory"] >= 90:
-        alerts.append({"severity": "critical", "message": "Memory critically high", "metric": "memory", "value": data["memory"]})
-    elif data["memory"] >= 80:
-        alerts.append({"severity": "warning",  "message": "High memory usage",     "metric": "memory", "value": data["memory"]})
+    if metrics["memory"] >= 90:
+        alerts.append(
+            {
+                "severity": "critical",
+                "metric": "memory",
+                "message": "Memory critically high",
+                "value": metrics["memory"],
+                "unit": "%",
+            }
+        )
+    elif metrics["memory"] >= 80:
+        alerts.append(
+            {
+                "severity": "warning",
+                "metric": "memory",
+                "message": "High memory usage",
+                "value": metrics["memory"],
+                "unit": "%",
+            }
+        )
 
-    if data["disk"] >= 85:
-        alerts.append({"severity": "warning", "message": "Disk usage approaching limit", "metric": "disk", "value": data["disk"]})
+    if metrics["disk"] >= 90:
+        alerts.append(
+            {
+                "severity": "critical",
+                "metric": "disk",
+                "message": "Disk usage critical",
+                "value": metrics["disk"],
+                "unit": "%",
+            }
+        )
+    elif metrics["disk"] >= 85:
+        alerts.append(
+            {
+                "severity": "warning",
+                "metric": "disk",
+                "message": "Disk usage approaching limit",
+                "value": metrics["disk"],
+                "unit": "%",
+            }
+        )
 
-    if data["latency"] >= 300:
-        alerts.append({"severity": "critical", "message": "Response latency critical", "metric": "latency", "value": data["latency"]})
-    elif data["latency"] >= 150:
-        alerts.append({"severity": "warning",  "message": "Elevated response latency", "metric": "latency", "value": data["latency"]})
+    if metrics["network"] >= 700:
+        alerts.append(
+            {
+                "severity": "critical",
+                "metric": "network",
+                "message": "Network throughput spike detected",
+                "value": metrics["network"],
+                "unit": "MB/s",
+            }
+        )
+    elif metrics["network"] >= 450:
+        alerts.append(
+            {
+                "severity": "warning",
+                "metric": "network",
+                "message": "Network traffic elevated",
+                "value": metrics["network"],
+                "unit": "MB/s",
+            }
+        )
+
+    if metrics["latency"] >= 300:
+        alerts.append(
+            {
+                "severity": "critical",
+                "metric": "latency",
+                "message": "Response latency critical",
+                "value": metrics["latency"],
+                "unit": "ms",
+            }
+        )
+    elif metrics["latency"] >= 150:
+        alerts.append(
+            {
+                "severity": "warning",
+                "metric": "latency",
+                "message": "Elevated response latency",
+                "value": metrics["latency"],
+                "unit": "ms",
+            }
+        )
+
+    if metrics["cost_optimization"] <= 25:
+        alerts.append(
+            {
+                "severity": "warning",
+                "metric": "cost_optimization",
+                "message": "Cost efficiency has dropped",
+                "value": metrics["cost_optimization"],
+                "unit": "%",
+            }
+        )
 
     return alerts
 
 
-def anomaly_score(data: dict) -> float:
-    """
-    Lightweight anomaly score (0–100).
-    Weighted average of how far each metric is into the 'danger zone'.
-    """
-    weights = {"cpu": 0.35, "memory": 0.30, "disk": 0.15, "latency": 0.20}
-    thresholds = {"cpu": 70, "memory": 70, "disk": 75, "latency": 120}
-    maxima     = {"cpu": 100, "memory": 100, "disk": 100, "latency": 800}
+def anomaly_score(metrics: dict) -> float:
+    weights = {
+        "cpu": 0.30,
+        "memory": 0.25,
+        "disk": 0.15,
+        "latency": 0.20,
+        "network": 0.10,
+    }
+    thresholds = {
+        "cpu": 70,
+        "memory": 70,
+        "disk": 75,
+        "latency": 120,
+        "network": 350,
+    }
+    maxima = {
+        "cpu": 100,
+        "memory": 100,
+        "disk": 100,
+        "latency": 800,
+        "network": 950,
+    }
 
     score = 0.0
-    for key, w in weights.items():
-        val = data[key]
-        lo  = thresholds[key]
-        hi  = maxima[key]
-        if val > lo:
-            score += w * min((val - lo) / (hi - lo), 1.0)
+    for key, weight in weights.items():
+        value = metrics[key]
+        low = thresholds[key]
+        high = maxima[key]
+        if value > low:
+            score += weight * min((value - low) / (high - low), 1.0)
 
-    return round(score * 100, 1)
+    return _round(score * 100)
 
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+def determine_status(alerts: list[dict]) -> str:
+    if any(alert["severity"] == "critical" for alert in alerts):
+        return "critical"
+    if alerts:
+        return "warning"
+    return "healthy"
+
+
+def create_snapshot() -> dict:
+    data = generate_metrics()
+    alerts = build_alerts(data)
+    score = anomaly_score(data)
+    status = determine_status(alerts)
+    timestamp = _utc_now()
+
+    snapshot = {
+        "timestamp": timestamp,
+        "data": data,
+        "alerts": alerts,
+        "alert_count": len(alerts),
+        "memory_alerts": [
+            alert for alert in alerts if alert["metric"] in {"memory", "ram_usage"}
+        ],
+        "anomaly_score": score,
+        "status": status,
+        "log_level": LOG_LEVEL_MAP[status],
+    }
+    metric_history.append(snapshot)
+    return snapshot
+
+
+def ensure_history(seed_count: int = 18) -> None:
+    while len(metric_history) < seed_count:
+        create_snapshot()
+
+
+def _series(metric: str) -> dict:
+    values = [snapshot["data"][metric] for snapshot in metric_history]
+    return {
+        "current": values[-1],
+        "avg": _round(sum(values) / len(values)),
+        "max": max(values),
+        "min": min(values),
+    }
+
 
 @app.get("/", tags=["General"])
 def home():
     return {
-        "message": "CloudScope API is running 🚀",
-        "version": "2.0.0",
-        "docs":    "/docs",
+        "message": "CloudScope API is running",
+        "version": app.version,
+        "docs": "/docs",
     }
 
 
 @app.get("/health", tags=["General"])
 def health():
-    """Standard liveness probe — returns 200 if the API is up."""
-    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+    return {"status": "ok", "timestamp": _utc_now()}
 
 
 @app.get("/metrics", tags=["Metrics"])
 def get_metrics():
-    """
-    Returns a fresh snapshot of simulated system metrics,
-    along with alerts and an AI anomaly score.
-    """
-    data      = generate_metrics()
-    alerts    = build_alerts(data)
-    a_score   = anomaly_score(data)
-
-    snapshot = {
-        "timestamp":     datetime.now(timezone.utc).isoformat(),
-        "data":          data,
-        "alerts":        alerts,
-        "alert_count":   len(alerts),
-        "anomaly_score": a_score,
-        "status":        "critical" if any(a["severity"] == "critical" for a in alerts)
-                         else "warning" if alerts
-                         else "healthy",
-    }
-
-    metric_history.append(snapshot)   # store for /history
-    return snapshot
+    return create_snapshot()
 
 
 @app.get("/history", tags=["Metrics"])
 def get_history():
-    """
-    Returns the last ≤20 metric snapshots — use this to power trend charts.
-    """
-    return {
-        "count":   len(metric_history),
-        "history": list(metric_history),
-    }
+    ensure_history()
+    return {"count": len(metric_history), "history": list(metric_history)}
 
 
 @app.get("/summary", tags=["Metrics"])
 def get_summary():
-    """
-    Aggregated stats across stored history — handy for KPI cards.
-    """
-    if not metric_history:
-        return {"message": "No data yet — call /metrics first."}
+    ensure_history()
 
-    cpus      = [s["data"]["cpu"]     for s in metric_history]
-    memories  = [s["data"]["memory"]  for s in metric_history]
-    latencies = [s["data"]["latency"] for s in metric_history]
-
+    latest = metric_history[-1]
     return {
         "samples": len(metric_history),
-        "cpu": {
-            "avg": round(sum(cpus)     / len(cpus), 1),
-            "max": max(cpus),
-            "min": min(cpus),
-        },
-        "memory": {
-            "avg": round(sum(memories) / len(memories), 1),
-            "max": max(memories),
-            "min": min(memories),
-        },
-        "latency": {
-            "avg": round(sum(latencies) / len(latencies), 1),
-            "max": max(latencies),
-            "min": min(latencies),
-        },
-        "total_alerts": sum(s["alert_count"] for s in metric_history),
+        "timestamp": latest["timestamp"],
+        "status": latest["status"],
+        "log_level": latest["log_level"],
+        "anomaly_score": latest["anomaly_score"],
+        "alerts_open": latest["alert_count"],
+        "cpu": _series("cpu"),
+        "memory": _series("memory"),
+        "ram_usage": _series("ram_usage"),
+        "disk": _series("disk"),
+        "network": _series("network"),
+        "latency": _series("latency"),
+        "cost_optimization": _series("cost_optimization"),
     }
+

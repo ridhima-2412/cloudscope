@@ -1,408 +1,634 @@
-# dashboard.py  —  CloudScope v2
-import streamlit as st
-import requests
+import os
 import time
-import pandas as pd
 from datetime import datetime
 
-# ── Page config ───────────────────────────────────────────────────────────────
+import pandas as pd
+import requests
+import streamlit as st
+
 st.set_page_config(
     page_title="CloudScope",
-    page_icon="☁️",
+    page_icon="C",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ── Custom CSS ────────────────────────────────────────────────────────────────
-st.markdown("""
+st.markdown(
+    """
 <style>
-/* ── Fonts ── */
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap');
 
-/* ── Root palette ── */
 :root {
-    --bg:        #0d1117;
-    --surface:   #161b22;
-    --border:    #30363d;
-    --accent:    #58a6ff;
-    --green:     #3fb950;
-    --yellow:    #d29922;
-    --red:       #f85149;
-    --text:      #e6edf3;
-    --muted:     #8b949e;
+    --bg: #08111f;
+    --panel: rgba(10, 24, 42, 0.82);
+    --panel-strong: rgba(12, 31, 53, 0.96);
+    --border: rgba(137, 196, 244, 0.16);
+    --text: #eaf4ff;
+    --muted: #89a8c6;
+    --accent: #6ee7f2;
+    --accent-2: #7dd3fc;
+    --good: #4ade80;
+    --warn: #fbbf24;
+    --bad: #fb7185;
 }
 
-/* ── Global ── */
-html, body, [class*="css"] {
-    background-color: var(--bg) !important;
-    color: var(--text) !important;
-    font-family: 'DM Sans', sans-serif;
+.stApp {
+    background:
+        radial-gradient(circle at top left, rgba(125, 211, 252, 0.16), transparent 34%),
+        radial-gradient(circle at top right, rgba(110, 231, 242, 0.12), transparent 26%),
+        linear-gradient(180deg, #07101d 0%, #091526 100%);
+    color: var(--text);
+    font-family: 'Space Grotesk', sans-serif;
 }
 
-/* ── Sidebar ── */
 [data-testid="stSidebar"] {
-    background-color: var(--surface) !important;
+    background: rgba(6, 16, 29, 0.95);
     border-right: 1px solid var(--border);
 }
 
-/* ── Metric cards ── */
-.metric-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 20px 24px;
-    margin-bottom: 4px;
-    transition: border-color 0.2s;
+[data-testid="stHeader"], footer, #MainMenu {
+    visibility: hidden;
 }
-.metric-card:hover { border-color: var(--accent); }
-.metric-label {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.12em;
+
+.hero {
+    padding: 1.5rem 1.6rem;
+    border: 1px solid var(--border);
+    background: linear-gradient(135deg, rgba(10, 24, 42, 0.9), rgba(11, 40, 69, 0.78));
+    border-radius: 24px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
+}
+
+.eyebrow {
+    color: var(--accent);
+    font-size: 0.8rem;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    font-weight: 700;
+}
+
+.hero-title {
+    margin: 0.2rem 0 0 0;
+    font-size: 2.35rem;
+    line-height: 1;
+    font-weight: 700;
+}
+
+.hero-subtitle {
+    color: var(--muted);
+    margin-top: 0.6rem;
+    font-size: 1rem;
+}
+
+.panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 1rem 1.1rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+}
+
+.section-title {
+    font-size: 0.8rem;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
     color: var(--muted);
-    margin-bottom: 6px;
-}
-.metric-value {
-    font-family: 'Space Mono', monospace;
-    font-size: 32px;
+    margin-bottom: 0.75rem;
     font-weight: 700;
-    line-height: 1;
-    margin-bottom: 10px;
 }
-.metric-bar-bg {
-    background: #21262d;
-    border-radius: 4px;
-    height: 6px;
-    width: 100%;
+
+.metric-card {
+    background: linear-gradient(180deg, rgba(8, 22, 39, 0.96), rgba(8, 19, 33, 0.86));
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 1rem;
+    min-height: 148px;
+}
+
+.metric-label {
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.metric-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 2rem;
+    font-weight: 700;
+    margin-top: 0.7rem;
+}
+
+.metric-meta {
+    color: var(--muted);
+    margin-top: 0.4rem;
+    font-size: 0.88rem;
+}
+
+.metric-bar {
+    margin-top: 0.85rem;
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
     overflow: hidden;
 }
-.metric-bar-fill {
-    height: 6px;
-    border-radius: 4px;
-    transition: width 0.5s ease;
+
+.metric-bar > span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
 }
 
-/* ── Alert cards ── */
-.alert-card {
-    border-radius: 10px;
-    padding: 12px 16px;
-    margin-bottom: 8px;
-    font-size: 14px;
-    font-weight: 500;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-.alert-critical {
-    background: rgba(248,81,73,0.12);
-    border: 1px solid rgba(248,81,73,0.4);
-    color: #f85149;
-}
-.alert-warning {
-    background: rgba(210,153,34,0.12);
-    border: 1px solid rgba(210,153,34,0.4);
-    color: #d29922;
-}
-.alert-ok {
-    background: rgba(63,185,80,0.10);
-    border: 1px solid rgba(63,185,80,0.35);
-    color: #3fb950;
-}
-
-/* ── Status badge ── */
 .status-badge {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
+    gap: 0.45rem;
+    padding: 0.45rem 0.9rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
     text-transform: uppercase;
-}
-.status-healthy  { background:rgba(63,185,80,0.15);  color:#3fb950; }
-.status-warning  { background:rgba(210,153,34,0.15); color:#d29922; }
-.status-critical { background:rgba(248,81,73,0.15);  color:#f85149; }
-
-/* ── Anomaly score ring ── */
-.score-ring {
-    font-family: 'Space Mono', monospace;
-    font-size: 48px;
+    letter-spacing: 0.12em;
     font-weight: 700;
-    text-align: center;
-    margin: 8px 0 4px;
+    border: 1px solid transparent;
 }
-.score-label {
-    font-size: 11px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--muted);
+
+.status-healthy {
+    color: var(--good);
+    background: rgba(74, 222, 128, 0.12);
+    border-color: rgba(74, 222, 128, 0.24);
+}
+
+.status-warning {
+    color: var(--warn);
+    background: rgba(251, 191, 36, 0.12);
+    border-color: rgba(251, 191, 36, 0.24);
+}
+
+.status-critical {
+    color: var(--bad);
+    background: rgba(251, 113, 133, 0.12);
+    border-color: rgba(251, 113, 133, 0.24);
+}
+
+.signal-card {
+    padding: 1.1rem;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--panel-strong);
     text-align: center;
 }
 
-/* ── Section headers ── */
-.section-header {
-    font-size: 11px;
-    font-weight: 600;
+.signal-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 2.8rem;
+    font-weight: 700;
+}
+
+.signal-label {
+    color: var(--muted);
+    text-transform: uppercase;
     letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin: 20px 0 10px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--border);
+    font-size: 0.76rem;
+    margin-top: 0.3rem;
 }
 
-/* ── Timestamp ── */
-.ts {
-    font-family: 'Space Mono', monospace;
-    font-size: 11px;
-    color: var(--muted);
+.alert-card {
+    border-radius: 16px;
+    padding: 0.9rem 1rem;
+    margin-bottom: 0.7rem;
+    border: 1px solid var(--border);
+    background: rgba(7, 21, 37, 0.78);
 }
 
-/* ── Hide Streamlit chrome ── */
-#MainMenu, footer, header { visibility: hidden; }
-[data-testid="stToolbar"] { display: none; }
+.alert-critical {
+    border-color: rgba(251, 113, 133, 0.3);
+    background: rgba(68, 14, 28, 0.58);
+}
+
+.alert-warning {
+    border-color: rgba(251, 191, 36, 0.3);
+    background: rgba(62, 43, 10, 0.58);
+}
+
+.tiny {
+    color: var(--muted);
+    font-size: 0.8rem;
+}
+
+.mono {
+    font-family: 'JetBrains Mono', monospace;
+}
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-# ── Config ────────────────────────────────────────────────────────────────────
-BACKEND_URL  = "http://backend:8000"
-HISTORY_SIZE = 30
+DEFAULT_BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
+DEFAULT_POLL_SECONDS = int(os.getenv("POLL_SECONDS", "5"))
+REQUEST_TIMEOUT = 5
 
-# ── Session state ─────────────────────────────────────────────────────────────
-if "history" not in st.session_state:
-    st.session_state.history = []
-if "last_fetch" not in st.session_state:
-    st.session_state.last_fetch = None
-if "auto_refresh" not in st.session_state:
-    st.session_state.auto_refresh = False
 
-# ── Data fetching ─────────────────────────────────────────────────────────────
-def fetch_metrics() -> dict | None:
-    """Fetch /metrics from backend with retry. Returns None on failure."""
-    for attempt in range(3):
-        try:
-            r = requests.get(f"{BACKEND_URL}/metrics", timeout=5)
-            r.raise_for_status()
-            return r.json()
-        except requests.exceptions.ConnectionError:
-            if attempt == 2:
-                st.toast("⚠️ Cannot reach backend — check it's running", icon="🔴")
-            time.sleep(0.8)
-        except requests.exceptions.Timeout:
-            st.toast("⚠️ Request timed out", icon="🕐")
-            break
-        except Exception as e:
-            st.toast(f"Unexpected error: {e}", icon="❌")
-            break
-    return None
-
-def fetch_history() -> list:
-    """Fetch /history from backend for trend charts."""
+def safe_number(value, default=0.0):
     try:
-        r = requests.get(f"{BACKEND_URL}/history", timeout=5)
-        r.raise_for_status()
-        return r.json().get("history", [])
-    except Exception:
-        return []
+        if value is None:
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-def _colour(val: float, warn: float, crit: float) -> str:
-    if val >= crit: return "#f85149"
-    if val >= warn: return "#d29922"
-    return "#3fb950"
 
-def _status_badge(status: str) -> str:
-    icons = {"healthy": "●", "warning": "◐", "critical": "●"}
-    icon  = icons.get(status, "●")
-    return f'<span class="status-badge status-{status}">{icon} {status.upper()}</span>'
+def severity_color(value: float, warning: float, critical: float, reverse: bool = False) -> str:
+    if reverse:
+        if value <= critical:
+            return "#fb7185"
+        if value <= warning:
+            return "#fbbf24"
+        return "#4ade80"
+    if value >= critical:
+        return "#fb7185"
+    if value >= warning:
+        return "#fbbf24"
+    return "#4ade80"
 
-def _score_colour(score: float) -> str:
-    if score >= 60: return "#f85149"
-    if score >= 30: return "#d29922"
-    return "#3fb950"
 
-def render_metric_card(label: str, value: int, unit: str,
-                       warn: float, crit: float, max_val: float = 100):
-    col   = _colour(value, warn, crit)
-    pct   = min(value / max_val * 100, 100)
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-label">{label}</div>
-        <div class="metric-value" style="color:{col}">{value}<span style="font-size:16px;color:#8b949e">{unit}</span></div>
-        <div class="metric-bar-bg">
-            <div class="metric-bar-fill" style="width:{pct}%;background:{col}"></div>
-        </div>
-    </div>""", unsafe_allow_html=True)
+def status_badge(status: str) -> str:
+    normalized = (status or "healthy").lower()
+    label = normalized.upper()
+    dot = "●"
+    return f'<span class="status-badge status-{normalized}">{dot} {label}</span>'
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown("## ☁️ CloudScope")
-    st.markdown('<div class="ts">Cloud Infrastructure Monitor</div>', unsafe_allow_html=True)
-    st.divider()
 
-    st.markdown('<div class="section-header">Controls</div>', unsafe_allow_html=True)
-    auto = st.toggle("Auto-refresh (5s)", value=st.session_state.auto_refresh)
-    st.session_state.auto_refresh = auto
+def fetch_json(path: str, base_url: str) -> tuple[dict | None, str | None]:
+    try:
+        response = requests.get(f"{base_url}{path}", timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        return response.json(), None
+    except requests.exceptions.Timeout:
+        return None, f"Timed out while requesting {path} from {base_url}."
+    except requests.exceptions.ConnectionError:
+        return None, f"Could not connect to backend at {base_url}."
+    except requests.exceptions.HTTPError as exc:
+        return None, f"Backend returned HTTP {exc.response.status_code} for {path}."
+    except requests.exceptions.RequestException as exc:
+        return None, f"Request failed for {path}: {exc}"
+    except ValueError:
+        return None, f"Backend returned invalid JSON for {path}."
 
-    manual = st.button("⟳  Refresh Now", use_container_width=True)
 
-    st.divider()
-    st.markdown('<div class="section-header">Backend</div>', unsafe_allow_html=True)
-    backend_input = st.text_input("URL", value=BACKEND_URL, label_visibility="collapsed")
-    if backend_input:
-        BACKEND_URL = backend_input.rstrip("/")
+def refresh_data(base_url: str) -> tuple[dict | None, dict | None, list, list[str]]:
+    errors: list[str] = []
 
-    st.divider()
-    st.markdown('<div class="section-header">Thresholds</div>', unsafe_allow_html=True)
-    cpu_warn  = st.slider("CPU warn %",    50, 95, 75)
-    cpu_crit  = st.slider("CPU critical %",60, 100, 90)
-    mem_warn  = st.slider("Mem warn %",    50, 95, 80)
-    mem_crit  = st.slider("Mem critical %",60, 100, 90)
+    metrics, metrics_error = fetch_json("/metrics", base_url)
+    if metrics_error:
+        errors.append(metrics_error)
 
-    st.divider()
-    if st.button("🗑  Clear History", use_container_width=True):
-        st.session_state.history = []
-        st.rerun()
+    summary, summary_error = fetch_json("/summary", base_url)
+    if summary_error:
+        errors.append(summary_error)
 
-# ── Main header ───────────────────────────────────────────────────────────────
-col_title, col_status = st.columns([3, 1])
-with col_title:
-    st.markdown("# ☁️ CloudScope Dashboard")
+    history_payload, history_error = fetch_json("/history", base_url)
+    if history_error:
+        errors.append(history_error)
 
-# ── Fetch ─────────────────────────────────────────────────────────────────────
-should_fetch = manual or st.session_state.auto_refresh
+    history = []
+    if history_payload:
+        history = history_payload.get("history", []) or []
 
-payload = None
-if should_fetch:
-    with st.spinner("Fetching metrics…"):
-        payload = fetch_metrics()
+    return metrics, summary, history, errors
 
-    if payload:
-        st.session_state.last_fetch = payload
-        ts = datetime.now().strftime("%H:%M:%S")
-        row = {
-            "time":    ts,
-            "cpu":     payload["data"]["cpu"],
-            "memory":  payload["data"]["memory"],
-            "disk":    payload["data"]["disk"],
-            "network": payload["data"]["network"],
-            "latency": payload["data"]["latency"],
-            "score":   payload["anomaly_score"],
-        }
-        st.session_state.history.append(row)
-        if len(st.session_state.history) > HISTORY_SIZE:
-            st.session_state.history.pop(0)
 
-# Use cached payload if no fresh fetch
-display = payload or st.session_state.get("last_fetch")
-
-# ── Status bar ────────────────────────────────────────────────────────────────
-with col_status:
-    if display:
-        status = display.get("status", "healthy")
-        st.markdown(_status_badge(status), unsafe_allow_html=True)
-        st.markdown(
-            f'<div class="ts" style="text-align:right">Updated {datetime.now().strftime("%H:%M:%S")}</div>',
-            unsafe_allow_html=True
+def history_frame(history: list[dict]) -> pd.DataFrame:
+    rows = []
+    for item in history:
+        data = item.get("data", {}) or {}
+        rows.append(
+            {
+                "timestamp": item.get("timestamp"),
+                "cpu": safe_number(data.get("cpu")),
+                "memory": safe_number(data.get("memory")),
+                "ram_usage": safe_number(data.get("ram_usage")),
+                "disk": safe_number(data.get("disk")),
+                "network": safe_number(data.get("network")),
+                "latency": safe_number(data.get("latency")),
+                "cost_optimization": safe_number(data.get("cost_optimization")),
+                "anomaly_score": safe_number(item.get("anomaly_score")),
+                "status": item.get("status", "healthy"),
+                "log_level": item.get("log_level", "INFO"),
+                "alert_count": safe_number(item.get("alert_count")),
+            }
         )
 
-# ── No data yet ───────────────────────────────────────────────────────────────
-if not display:
-    st.markdown("""
-    <div style="text-align:center;padding:80px 0;color:#8b949e">
-        <div style="font-size:56px;margin-bottom:16px">☁️</div>
-        <div style="font-size:20px;font-weight:600;color:#e6edf3;margin-bottom:8px">No data yet</div>
-        <div style="font-size:14px">Click <b>Refresh Now</b> or enable Auto-refresh to start monitoring</div>
-    </div>
-    """, unsafe_allow_html=True)
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        return frame
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"], errors="coerce")
+    frame = frame.dropna(subset=["timestamp"]).sort_values("timestamp")
+    frame["label"] = frame["timestamp"].dt.strftime("%H:%M:%S")
+    return frame
+
+
+def render_metric_card(label: str, value: str, meta: str, percent: float, color: str):
+    width = max(0.0, min(percent, 100.0))
+    st.markdown(
+        f"""
+        <div class="metric-card">
+            <div class="metric-label">{label}</div>
+            <div class="metric-value" style="color:{color}">{value}</div>
+            <div class="metric-meta">{meta}</div>
+            <div class="metric-bar"><span style="width:{width}%; background:{color};"></span></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+if "backend_url" not in st.session_state:
+    st.session_state.backend_url = DEFAULT_BACKEND_URL
+if "poll_seconds" not in st.session_state:
+    st.session_state.poll_seconds = DEFAULT_POLL_SECONDS
+if "auto_refresh" not in st.session_state:
+    st.session_state.auto_refresh = True
+if "last_metrics" not in st.session_state:
+    st.session_state.last_metrics = None
+if "last_summary" not in st.session_state:
+    st.session_state.last_summary = None
+if "last_history" not in st.session_state:
+    st.session_state.last_history = []
+if "errors" not in st.session_state:
+    st.session_state.errors = []
+if "last_updated" not in st.session_state:
+    st.session_state.last_updated = None
+
+with st.sidebar:
+    st.markdown("## CloudScope")
+    st.caption("Cloud monitoring and anomaly detection")
+    st.divider()
+    st.session_state.backend_url = st.text_input(
+        "Backend URL",
+        value=st.session_state.backend_url,
+        help="Used for all API requests from the dashboard.",
+    ).rstrip("/")
+    st.session_state.auto_refresh = st.toggle(
+        "Auto refresh",
+        value=st.session_state.auto_refresh,
+    )
+    st.session_state.poll_seconds = st.slider(
+        "Polling interval (seconds)",
+        min_value=3,
+        max_value=20,
+        value=st.session_state.poll_seconds,
+    )
+    refresh_now = st.button("Refresh now", use_container_width=True)
+    st.divider()
+    st.caption("Expected endpoints: /health, /metrics, /history, /summary")
+
+should_refresh = (
+    refresh_now
+    or st.session_state.last_metrics is None
+    or st.session_state.auto_refresh
+)
+
+if should_refresh:
+    with st.spinner("Refreshing monitoring data..."):
+        metrics, summary, history, errors = refresh_data(st.session_state.backend_url)
+
+    if metrics:
+        st.session_state.last_metrics = metrics
+    if summary:
+        st.session_state.last_summary = summary
+    if history:
+        st.session_state.last_history = history
+    st.session_state.errors = errors
+    st.session_state.last_updated = datetime.now()
+
+metrics = st.session_state.last_metrics
+summary = st.session_state.last_summary
+history = st.session_state.last_history
+
+top_left, top_right = st.columns([2.6, 1.2])
+with top_left:
+    st.markdown(
+        """
+        <div class="hero">
+            <div class="eyebrow">Realtime Cloud Observability</div>
+            <div class="hero-title">CloudScope Dashboard</div>
+            <div class="hero-subtitle">
+                Unified live metrics, anomaly scoring, alerts, and history tracking for your cloud estate.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+with top_right:
+    status = (metrics or {}).get("status", "healthy")
+    st.markdown('<div class="panel">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Cluster Status</div>', unsafe_allow_html=True)
+    st.markdown(status_badge(status), unsafe_allow_html=True)
+    timestamp_text = "No samples yet"
+    if metrics and metrics.get("timestamp"):
+        timestamp_text = f"Latest sample: {metrics['timestamp']}"
+    st.markdown(
+        f'<div class="tiny" style="margin-top:0.9rem">{timestamp_text}</div>',
+        unsafe_allow_html=True,
+    )
+    if st.session_state.last_updated:
+        st.markdown(
+            f'<div class="tiny">Dashboard refresh: {st.session_state.last_updated.strftime("%H:%M:%S")}</div>',
+            unsafe_allow_html=True,
+        )
+    st.markdown(
+        f'<div class="tiny">Backend: <span class="mono">{st.session_state.backend_url}</span></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+if st.session_state.errors:
+    for error in st.session_state.errors:
+        st.error(error)
+
+if not metrics or not summary:
+    st.warning("No backend data available yet. Check the backend URL and API health, then refresh.")
     if st.session_state.auto_refresh:
-        time.sleep(5)
+        time.sleep(st.session_state.poll_seconds)
         st.rerun()
     st.stop()
 
-# ── Metrics row ───────────────────────────────────────────────────────────────
-st.markdown('<div class="section-header">Live Metrics</div>', unsafe_allow_html=True)
+data = metrics.get("data", {}) or {}
+alerts = metrics.get("alerts", []) or []
+frame = history_frame(history)
 
-d = display["data"]
-c1, c2, c3, c4, c5 = st.columns(5)
+cpu = safe_number(data.get("cpu"))
+memory = safe_number(data.get("memory"))
+ram_usage = safe_number(data.get("ram_usage"))
+ram_used_gb = safe_number(data.get("ram_used_gb"))
+ram_total_gb = safe_number(data.get("ram_total_gb"), 64)
+disk = safe_number(data.get("disk"))
+network = safe_number(data.get("network"))
+latency = safe_number(data.get("latency"))
+cost_optimization = safe_number(data.get("cost_optimization"))
+anomaly = safe_number(metrics.get("anomaly_score"))
+log_level = metrics.get("log_level", "INFO")
+memory_alert_count = len(metrics.get("memory_alerts", []) or [])
 
-with c1:
-    render_metric_card("CPU", d["cpu"], "%", cpu_warn, cpu_crit)
-with c2:
-    render_metric_card("Memory", d["memory"], "%", mem_warn, mem_crit)
-with c3:
-    render_metric_card("Disk", d["disk"], "%", 80, 90)
-with c4:
-    render_metric_card("Latency", d["latency"], "ms", 150, 300, max_val=800)
-with c5:
-    render_metric_card("Network", d["network"], "MB/s", 400, 700, max_val=950)
+metric_cols = st.columns(4)
+with metric_cols[0]:
+    render_metric_card(
+        "CPU usage",
+        f"{cpu:.0f}%",
+        f"Average: {safe_number(summary.get('cpu', {}).get('avg')):.1f}%",
+        cpu,
+        severity_color(cpu, 75, 90),
+    )
+with metric_cols[1]:
+    render_metric_card(
+        "Memory usage",
+        f"{memory:.0f}%",
+        f"RAM {ram_used_gb:.1f} / {ram_total_gb:.0f} GB",
+        memory,
+        severity_color(memory, 80, 90),
+    )
+with metric_cols[2]:
+    render_metric_card(
+        "Disk usage",
+        f"{disk:.0f}%",
+        f"Network {network:.0f} MB/s",
+        disk,
+        severity_color(disk, 85, 90),
+    )
+with metric_cols[3]:
+    render_metric_card(
+        "Latency",
+        f"{latency:.0f} ms",
+        f"Current log level: {log_level}",
+        latency / 8,
+        severity_color(latency, 150, 300),
+    )
 
-# ── Anomaly score + Alerts ────────────────────────────────────────────────────
-score_col, alert_col = st.columns([1, 2])
-
-with score_col:
-    st.markdown('<div class="section-header">Anomaly Score</div>', unsafe_allow_html=True)
-    score = display.get("anomaly_score", 0)
-    sc    = _score_colour(score)
-    mode  = display["data"].get("mode", "normal")
-    st.markdown(f"""
-    <div class="metric-card" style="text-align:center">
-        <div class="score-ring" style="color:{sc}">{score}</div>
-        <div class="score-label">out of 100</div>
-        <div style="margin-top:12px">
-            <span class="status-badge status-{'critical' if score>=60 else 'warning' if score>=30 else 'healthy'}">
-                {'ANOMALOUS' if score>=60 else 'ELEVATED' if score>=30 else 'NORMAL'}
-            </span>
+signal_cols = st.columns([1.1, 1.1, 1.1, 1.1, 1.6])
+with signal_cols[0]:
+    st.markdown(
+        f"""
+        <div class="signal-card">
+            <div class="signal-value" style="color:{severity_color(anomaly, 30, 60)}">{anomaly:.1f}</div>
+            <div class="signal-label">Anomaly score</div>
         </div>
-        <div class="ts" style="margin-top:10px">Simulator: {mode.upper()}</div>
-    </div>""", unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
+with signal_cols[1]:
+    st.markdown(
+        f"""
+        <div class="signal-card">
+            <div class="signal-value" style="color:{severity_color(cost_optimization, 45, 25, reverse=True)}">{cost_optimization:.0f}%</div>
+            <div class="signal-label">Cost optimization</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+with signal_cols[2]:
+    st.markdown(
+        f"""
+        <div class="signal-card">
+            <div class="signal-value" style="color:{severity_color(ram_usage, 80, 90)}">{ram_usage:.0f}%</div>
+            <div class="signal-label">RAM usage</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+with signal_cols[3]:
+    st.markdown(
+        f"""
+        <div class="signal-card">
+            <div class="signal-value" style="color:{severity_color(memory_alert_count, 1, 2)}">{memory_alert_count}</div>
+            <div class="signal-label">Memory alerts</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+with signal_cols[4]:
+    st.markdown('<div class="panel">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Tracking Summary</div>', unsafe_allow_html=True)
+    st.write(f"History samples: `{len(frame)}`")
+    st.write(f"Open alerts: `{metrics.get('alert_count', 0)}`")
+    st.write(f"Simulator mode: `{data.get('mode', 'normal')}`")
+    st.write(f"Timestamp: `{metrics.get('timestamp', '-')}`")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-with alert_col:
-    st.markdown('<div class="section-header">Alerts</div>', unsafe_allow_html=True)
-    alerts = display.get("alerts", [])
-    if not alerts:
-        st.markdown('<div class="alert-card alert-ok">✔ All systems operating normally</div>',
-                    unsafe_allow_html=True)
+chart_left, chart_right = st.columns([1.8, 1.2])
+with chart_left:
+    st.markdown('<div class="panel">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Infrastructure Trends</div>', unsafe_allow_html=True)
+    if not frame.empty:
+        trend_df = frame.set_index("label")[
+            ["cpu", "memory", "ram_usage", "disk", "network", "latency"]
+        ]
+        st.line_chart(trend_df, height=300, use_container_width=True)
     else:
-        for a in alerts:
-            sev   = a.get("severity", "warning")
-            icon  = "🔴" if sev == "critical" else "🟡"
-            label = "CRITICAL" if sev == "critical" else "WARNING"
-            msg   = a.get("message", "Alert")
-            val   = a.get("value", "")
-            unit  = "ms" if a.get("metric") == "latency" else \
-                    ("MB/s" if a.get("metric") == "network" else "%")
+        st.info("History will appear here as soon as samples are available.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+with chart_right:
+    st.markdown('<div class="panel">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Risk and Efficiency</div>', unsafe_allow_html=True)
+    if not frame.empty:
+        risk_df = frame.set_index("label")[["anomaly_score", "cost_optimization", "alert_count"]]
+        st.area_chart(risk_df, height=300, use_container_width=True)
+    else:
+        st.info("Risk scoring chart is waiting for backend history.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+lower_left, lower_right = st.columns([1.15, 1.85])
+with lower_left:
+    st.markdown('<div class="panel">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Alerts Panel</div>', unsafe_allow_html=True)
+    if alerts:
+        for alert in alerts:
+            severity = alert.get("severity", "warning")
+            unit = alert.get("unit", "")
+            value = alert.get("value", "-")
+            message = alert.get("message", "Alert")
+            metric = alert.get("metric", "metric").replace("_", " ").title()
             st.markdown(
-                f'<div class="alert-card alert-{sev}">'
-                f'{icon} <b>[{label}]</b> {msg} &nbsp;'
-                f'<span style="opacity:.7">({val}{unit})</span></div>',
-                unsafe_allow_html=True
+                f"""
+                <div class="alert-card alert-{severity}">
+                    <strong>{severity.upper()}</strong><br/>
+                    {message}<br/>
+                    <span class="tiny">{metric}: {value}{unit}</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
+    else:
+        st.success("No active alerts. System is operating within configured thresholds.")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# ── Trend charts ──────────────────────────────────────────────────────────────
-if len(st.session_state.history) >= 2:
-    st.markdown('<div class="section-header">Trends</div>', unsafe_allow_html=True)
-    df = pd.DataFrame(st.session_state.history).set_index("time")
+with lower_right:
+    st.markdown('<div class="panel">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Recent History Table</div>', unsafe_allow_html=True)
+    if not frame.empty:
+        table = frame[
+            [
+                "timestamp",
+                "status",
+                "log_level",
+                "cpu",
+                "memory",
+                "ram_usage",
+                "disk",
+                "network",
+                "latency",
+                "cost_optimization",
+                "anomaly_score",
+                "alert_count",
+            ]
+        ].tail(12).copy()
+        table["timestamp"] = table["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
+        st.dataframe(table, use_container_width=True, hide_index=True)
+    else:
+        st.info("Recent samples will appear here after the first successful refresh.")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    chart_col1, chart_col2 = st.columns(2)
-    with chart_col1:
-        st.caption("CPU & Memory %")
-        st.line_chart(df[["cpu", "memory"]], height=180, use_container_width=True)
-    with chart_col2:
-        st.caption("Latency (ms) & Anomaly Score")
-        st.line_chart(df[["latency", "score"]], height=180, use_container_width=True)
-
-    with st.expander("📋 Raw History Table"):
-        st.dataframe(
-            df.style.background_gradient(subset=["cpu","memory","disk","score"],
-                                         cmap="RdYlGn_r"),
-            use_container_width=True
-        )
-
-# ── Auto-refresh loop ─────────────────────────────────────────────────────────
 if st.session_state.auto_refresh:
-    time.sleep(5)
+    time.sleep(st.session_state.poll_seconds)
     st.rerun()
+
