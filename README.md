@@ -142,7 +142,7 @@ cd frontend
 streamlit run app.py
 ```
 
-*(If using React frontend, run `npm install && npm run dev` instead.)*
+
 
 ---
 
@@ -247,4 +247,4 @@ docker-compose up --build
 
 ---
 
-##DEMO VIDEO LINK :[ https://1drv.ms/v/c/77a183bd730fde19/IQDJLMYUkbxCSrmhpP7bUAkqAcuwCkzvty5aC-e8vP211ao?e=Mf01vw](url)
+
